@@ -1,44 +1,53 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
-
+session_start();
 header('Content-Type: application/json');
 
+require 'db.php'; // Include your database connection file
+
 try {
-    // Check if request method is POST
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         throw new Exception('Invalid request method');
     }
 
-    // Get the JSON input
     $input = json_decode(file_get_contents('php://input'), true);
     if (json_last_error() !== JSON_ERROR_NONE) {
         throw new Exception('Invalid JSON input');
     }
 
-    // Retrieve form data
-    $feelingId = $input['feelingId'] ?? null;
-    $name = $input['name'] ?? 'Anonymous';
-    $content = $input['content'] ?? null;
+    $user_id = $_SESSION['user_id'];
+    $feeling_id = $input['feelingId'] ?? null;
+    $content = $input['replyContent'] ?? '';
+    $anonymous = $input['anonymous'] ?? false;
 
-    if (empty($feelingId) || empty($content)) {
-        throw new Exception('Feeling ID and content are required');
+    if (empty($user_id) || empty($feeling_id) || empty($content)) {
+        throw new Exception('User ID, Feeling ID, and Content are required');
     }
 
-    // Database connection
-    $conn = new mysqli('localhost', 'root', '', 'gumnaam_sahayata');
-    if ($conn->connect_error) {
-        throw new Exception('Database connection failed: ' . $conn->connect_error);
+    if (!$anonymous) {
+        $sql = "SELECT username FROM users WHERE id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param('i', $user_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        if ($result->num_rows === 1) {
+            $user = $result->fetch_assoc();
+            $name = $user['username'];
+        } else {
+            throw new Exception('User not found');
+        }
+    } else {
+        $name = 'Anonymous';
     }
 
-    $stmt = $conn->prepare("INSERT INTO replies (feeling_id, name, content) VALUES (?, ?, ?)");
-    $stmt->bind_param('iss', $feelingId, $name, $content);
-    if (!$stmt->execute()) {
-        throw new Exception('Error executing query: ' . $stmt->error);
-    }
+    $sql = "INSERT INTO replies (feeling_id, user_id, name, content) VALUES (?, ?, ?, ?)";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param('iiss', $feeling_id, $user_id, $name, $content);
 
-    echo json_encode(['success' => true]);
+    if ($stmt->execute()) {
+        echo json_encode(['success' => true]);
+    } else {
+        throw new Exception($conn->error);
+    }
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => $e->getMessage()]);
 }

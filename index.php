@@ -1,276 +1,251 @@
+<?php
+session_start();
+
+// Redirect to login page if not logged in
+if (!isset($_SESSION['user_id'])) {
+    header('Location: login.php');
+    exit;
+}
+
+require 'db.php'; // Include your database connection file
+
+$user_id = $_SESSION['user_id'];
+
+// Fetch user data from the database
+$sql = "SELECT username, email, profile_picture FROM users WHERE id = ?";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param('i', $user_id);
+$stmt->execute();
+$result = $stmt->get_result();
+
+if ($result->num_rows === 1) {
+    $user = $result->fetch_assoc();
+} else {
+    header('Location: register.php');
+    exit;
+}
+
+?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gumnaam Sahayata</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f0f0f0;
-            margin: 0;
-            padding: 0;
-        }
+    <link rel="stylesheet" href="assests/style.css">
 
-        .container {
-            max-width: 600px;
-            margin: auto;
-            padding: 20px;
-            border: 1px solid #ccc;
-            border-radius: 10px;
-            background-color: #fff;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-            margin-top: 20px;
-        }
-
-        h1 {
-            text-align: center;
-            color: #333;
-        }
-
-        form {
-            margin-bottom: 20px;
-        }
-
-        input[type="text"],
-        textarea {
-            width: calc(100% - 22px);
-            padding: 10px;
-            margin: 10px 0;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            box-sizing: border-box;
-        }
-
-        input[type="file"] {
-            margin: 10px 0;
-        }
-
-        button {
-            padding: 10px 20px;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background-color: #0056b3;
-        }
-
-        .feeling {
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            padding: 15px;
-            margin-bottom: 15px;
-            background-color: #fff;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-
-        .reply {
-            border-top: 1px solid #eee;
-            margin-top: 10px;
-            padding-top: 10px;
-        }
-
-        .replyForm {
-            margin-top: 10px;
-        }
-
-        @media (max-width: 600px) {
-            .container {
-                padding: 10px;
-            }
-
-            input[type="text"],
-            textarea {
-                width: 100%;
-            }
-
-            button {
-                width: 100%;
-            }
-        }
-
-        .time-ago {
-            color: #888;
-            font-size: 0.9em;
-        }
-    </style>
 </head>
 <body>
+<header>
+        <div class="header-logo">Gumnaam Sahayata</div>
+        <div class="header-search">
+        <input type="text" id="searchInput" placeholder="Search...">
+    </div>
+    <div class="header-nav">
+            <a href="index.php" class="active">Home</a>
+            <a href="profile.php">Profile</a>
+            <a href="message.php">Message</a>
+            <a href="logout.php">Logout</a>
+            <img src="<?php echo $user['profile_picture']; ?>" alt="Profile Picture" class="profile-pic">
+
+        </div>
+    </header>
     <div class="container">
-        <h1>Gumnaam Sahayata</h1>
         <form id="feelingForm" enctype="multipart/form-data">
-            <input type="text" id="name" name="name" placeholder="Your Name (Optional)" autocomplete="off">
+        <!--  <input type="text" id="name" name="name" placeholder="Your Name (Optional)" autocomplete="off" value="<?php echo $user['username']; ?>">!-->
             <textarea id="content" name="content" placeholder="Share your feelings..." required></textarea>
             <input type="file" id="image" name="image" accept="image/*">
+            
             <button type="submit">Submit</button>
         </form>
         <div id="feelingsContainer"></div>
     </div>
     <script>
-        document.addEventListener('DOMContentLoaded', function () {
-            const feelingForm = document.getElementById('feelingForm');
-            const feelingsContainer = document.getElementById('feelingsContainer');
+     
+    
+     document.addEventListener('DOMContentLoaded', function () {
+        const feelingForm = document.getElementById('feelingForm');
+        const feelingsContainer = document.getElementById('feelingsContainer');
+        const searchInput = document.getElementById('searchInput');
 
-            feelingForm.addEventListener('submit', submitFeeling);
+        feelingForm.addEventListener('submit', submitFeeling);
+        searchInput.addEventListener('input', performSearch);
 
-            function submitFeeling(event) {
-                event.preventDefault();
-                const formData = new FormData(feelingForm);
+        async function submitFeeling(event) {
+            event.preventDefault();
+            const formData = new FormData(feelingForm);
 
-                fetch('submit_feeling.php', {
+            try {
+                const response = await fetch('submit_feeling.php', {
                     method: 'POST',
                     body: formData
-                }).then(response => response.text()).then(text => {
-                    try {
-                        const data = JSON.parse(text);
-                        if (data.success) {
-                            fetchFeelings();
-                            feelingForm.reset();
-                        } else {
-                            console.error(data.error);
-                        }
-                    } catch (error) {
-                        console.error('JSON Parsing Error:', error, text);
-                    }
-                }).catch(error => console.error('Error:', error));
-            }
-
-            function fetchFeelings() {
-                fetch('get_feelings.php')
-                    .then(response => response.text())
-                    .then(text => {
-                        try {
-                            const data = JSON.parse(text);
-                            feelingsContainer.innerHTML = '';
-                            data.forEach(feeling => {
-                                const feelingDiv = document.createElement('div');
-                                feelingDiv.classList.add('feeling');
-                                feelingDiv.innerHTML = `
-                                    <p><strong>${feeling.name || 'Anonymous'}</strong> <span class="time-ago" data-timestamp="${feeling.timestamp}"></span></p>
-                                    <p>${feeling.content}</p>
-                                    ${feeling.image_path ? `<img src="${feeling.image_path}" alt="Feeling Image" style="max-width:100%; height: auto; margin-top: 10px;">` : ''}
-                                    <p>Views: <span id="viewCount_${feeling.id}">${feeling.views}</span></p>
-                                    <p>Likes: <span id="likeCount_${feeling.id}">${feeling.likes}</span></p>
-                                    <button onclick="likeFeeling(${feeling.id})">Like</button>
-                                    <div class="replies">
-                                        ${(feeling.replies || []).map(reply => `
-                                            <div class="reply">
-                                                <p><strong>${reply.name || 'Anonymous'}</strong> <span class="time-ago" data-timestamp="${reply.timestamp}"></span></p>
-                                                <p>${reply.content}</p>
-                                            </div>
-                                        `).join('')}
-                                        <form class="replyForm" data-feeling-id="${feeling.id}" onsubmit="submitReply(event, ${feeling.id})">
-                                            <input type="text" id="replyName_${feeling.id}" name="replyName" placeholder="Your Name (Optional)" autocomplete="off">
-                                            <textarea id="replyContent_${feeling.id}" name="replyContent" placeholder="Write a reply..." required></textarea>
-                                            <button type="submit">Reply</button>
-                                        </form>
-                                    </div>
-                                `;
-                                feelingsContainer.appendChild(feelingDiv);
-                                recordView(feeling.id);
-                            });
-                            updateTimestamps();
-                        } catch (error) {
-                            console.error('JSON Parsing Error:', error, text);
-                        }
-                    }).catch(error => console.error('Error:', error));
-            }
-
-            window.submitReply = function(event, feelingId) {
-                event.preventDefault();
-                const form = event.target;
-                const name = form.querySelector(`#replyName_${feelingId}`).value || 'Anonymous';
-                const content = form.querySelector(`#replyContent_${feelingId}`).value;
-
-                fetch('submit_reply.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ feelingId, name, content })
-                }).then(response => response.text()).then(text => {
-                    try {
-                        const data = JSON.parse(text);
-                        if (data.success) {
-                            fetchFeelings();
-                        } else {
-                            console.error(data.error);
-                        }
-                    } catch (error) {
-                        console.error('JSON Parsing Error:', error, text);
-                    }
-                }).catch(error => console.error('Error:', error));
-            };
-
-            window.likeFeeling = function(feelingId) {
-                fetch('like_feeling.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ feelingId })
-                }).then(response => response.text()).then(text => {
-                    try {
-                        const data = JSON.parse(text);
-                        if (data.success) {
-                            const likeCount = document.getElementById(`likeCount_${feelingId}`);
-                            likeCount.textContent = data.newLikes;
-                        } else {
-                            console.error(data.error);
-                        }
-                    } catch (error) {
-                        console.error('JSON Parsing Error:', error, text);
-                    }
-                }).catch(error => console.error('Error:', error));
-            };
-
-            function recordView(feelingId) {
-                fetch('record_view.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ feelingId })
-                }).then(response => response.text()).then(text => {
-                    try {
-                        const data = JSON.parse(text);
-                        if (data.success) {
-                            const viewCount = document.getElementById(`viewCount_${feelingId}`);
-                            viewCount.textContent = data.newViews;
-                        } else {
-                            console.error(data.error);
-                        }
-                    } catch (error) {
-                        console.error('JSON Parsing Error:', error, text);
-                    }
-                }).catch(error => console.error('Error:', error));
-            }
-
-            function updateTimestamps() {
-                const timeElements = document.querySelectorAll('.time-ago');
-                timeElements.forEach(element => {
-                    const timestamp = new Date(element.dataset.timestamp);
-                    const now = new Date();
-                    const diffInSeconds = Math.floor((now - timestamp) / 1000);
-
-                    let timeAgo = '';
-                    if (diffInSeconds < 60) {
-                        timeAgo = `${diffInSeconds} seconds ago`;
-                    } else if (diffInSeconds < 3600) {
-                        timeAgo = `${Math.floor(diffInSeconds / 60)} minutes ago`;
-                    } else if (diffInSeconds < 86400) {
-                        timeAgo = `${Math.floor(diffInSeconds / 60)} minutes ago`;
-                    } else if (diffInSeconds < 86400) {
-                        timeAgo = `${Math.floor(diffInSeconds / 3600)} hours ago`;
-                    } else {
-                        timeAgo = `${Math.floor(diffInSeconds / 86400)} days ago`;
-                    }
-                    element.textContent = timeAgo;
-                
                 });
+                const data = await response.json();
+                if (data.success) {
+                    fetchFeelings();
+                    feelingForm.reset();
+                } else {
+                    console.error(data.error);
+                }
+            } catch (error) {
+                console.error('Error:', error);
             }
-            
+        }
 
-            fetchFeelings();
-        });
-    </script>
+        async function fetchFeelings(search = '') {
+            try {
+                const response = await fetch(`get_feelings.php?search=${encodeURIComponent(search)}`);
+                const data = await response.json();
+                if (Array.isArray(data)) {
+                    feelingsContainer.innerHTML = '';
+                    data.forEach(feeling => {
+                        const feelingDiv = document.createElement('div');
+                        feelingDiv.classList.add('feeling');
+                        feelingDiv.innerHTML = `
+                            <div class="feeling-header">
+                                <img class="profile_picture" src="${feeling.profile || 'uploads/defaultpic.png'}" alt="Profile Pic">
+                                <div class="username">${feeling.name || 'Anonymous'}</div>
+                                <div class="timestamp">${calculateTimeAgo(feeling.timestamp)}</div>
+                            </div>
+                            <p>${feeling.content}</p>
+                            ${feeling.image_path ? `<img src="${feeling.image_path}" alt="Feeling Image" style="max-width:100%; height: auto; margin-top: 10px;">` : ''}
+                            <p>Views: <span id="viewCount_${feeling.id}">${feeling.views}</span></p>
+                            <p>Likes: <span id="likeCount_${feeling.id}">${feeling.likes}</span></p>
+                            <button class="like-button" onclick="likeFeeling(${feeling.id})">
+                                <span class="like-icon">👍</span> Like 
+                            </button>
+                            <div class="replies">
+                                ${(feeling.replies || []).map(reply => `
+                                    <div class="reply">
+                                        <p><strong>${reply.name || 'Anonymous'}</strong> <span class="time-ago" data-timestamp="${reply.timestamp}"></span></p>
+                                        <p>${reply.content}</p>
+                                    </div>
+                                `).join('')}
+                                <form class="replyForm" data-feeling-id="${feeling.id}" onsubmit="submitReply(event, ${feeling.id})">
+                                  <input type="text" id="replyName_${feeling.id}" name="replyName" placeholder="Your Name (Optional)" autocomplete="off" value="<?php echo $user['username']; ?>"> 
+                                    <textarea id="replyContent_${feeling.id}" name="replyContent" placeholder="Write a Comment..." required></textarea>
+                                    <button type="submit">Comment</button>
+                                </form>
+                            </div>
+                        `;
+                        feelingsContainer.appendChild(feelingDiv);
+                        recordView(feeling.id);
+                    });
+                } else {
+                    console.error(data.error);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        async function likeFeeling(feelingId) {
+            try {
+                const response = await fetch('like_feeling.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ feelingId: feelingId })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById(`likeCount_${feelingId}`).textContent = data.newLikes;
+                } else {
+                    console.error(data.error);
+                    alert("You already Liked on This Post");
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        async function submitReply(event, feelingId) {
+            event.preventDefault();
+            const replyForm = document.querySelector(`form[data-feeling-id="${feelingId}"]`);
+            const name = replyForm.querySelector(`#replyName_${feelingId}`).value;
+            const content = replyForm.querySelector(`#replyContent_${feelingId}`).value;
+
+            try {
+                const response = await fetch('submit_reply.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        feelingId: feelingId,
+                        replyName: name,
+                        replyContent: content
+                    })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    fetchFeelings();
+                    replyForm.reset();
+                } else {
+                    console.error(data.error);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        async function recordView(feelingId) {
+            try {
+                const response = await fetch('record_view.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ feelingId: feelingId })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    document.getElementById(`viewCount_${feelingId}`).textContent = data.newViews;
+                } else {
+                    console.error(data.error);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        function performSearch() {
+            fetchFeelings(searchInput.value);
+        }
+
+        function calculateTimeAgo(timestamp) {
+            const now = new Date();
+            const timeDiff = now - new Date(timestamp);
+            const seconds = Math.floor(timeDiff / 1000);
+            const minutes = Math.floor(seconds / 60);
+            const hours = Math.floor(minutes / 60);
+            const days = Math.floor(hours / 24);
+
+            if (days > 0) {
+                return `${days} day(s) ago`;
+            } else if (hours > 0) {
+                return `${hours} hour(s) ago`;
+            } else if (minutes > 0) {
+                return `${minutes} minute(s) ago`;
+            } else {
+                return `${seconds} second(s) ago`;
+            }
+        }
+
+        function updateTimestamps() {
+            const elements = document.querySelectorAll('.time-ago');
+            elements.forEach(element => {
+                const timestamp = element.getAttribute('data-timestamp');
+                element.textContent = calculateTimeAgo(timestamp);
+            });
+        }
+
+        fetchFeelings();
+        setInterval(updateTimestamps, 200); // Update timestamps every minute
+
+        // Expose functions to the global scope
+        window.likeFeeling = likeFeeling;
+        window.submitReply = submitReply;
+    });
+</script>
 </body>
+<footer>
+    <p>&copy; 2024 Gumnaam Sahayata. All rights reserved.</p>
+</footer>
 </html>

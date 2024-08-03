@@ -1,66 +1,42 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+require 'db.php'; // Include your database connection file
 
-header('Content-Type: application/json');
+$search = $_GET['search'] ?? '';
 
-try {
-    // Database connection
-    $conn = new mysqli('localhost', 'root', '', 'gumnaam_sahayata');
-    if ($conn->connect_error) {
-        throw new Exception('Database connection failed: ' . $conn->connect_error);
+$sql = "SELECT feelings.id, feelings.content, feelings.image_path, feelings.timestamp, users.username AS name,users.profile_picture AS profile,
+        (SELECT COUNT(*) FROM views WHERE views.feeling_id = feelings.id) AS views,
+                (SELECT COUNT(*) FROM likes WHERE likes.feeling_id = feelings.id) AS likes,
+        (SELECT COUNT(*) FROM replies WHERE replies.feeling_id = feelings.id) AS reply_count
+        FROM feelings
+        JOIN users ON feelings.user_id = users.id
+        WHERE feelings.content LIKE ?
+        ORDER BY feelings.timestamp DESC";
+
+$stmt = $conn->prepare($sql);
+$searchTerm = '%' . $search . '%';
+$stmt->bind_param('s', $searchTerm);
+$stmt->execute();
+$result = $stmt->get_result();
+
+$feelings = [];
+while ($row = $result->fetch_assoc()) {
+    $feelingId = $row['id'];
+    $row['replies'] = [];
+    $replySql = "SELECT replies.content, replies.timestamp, users.username AS name
+                 FROM replies 
+                 JOIN users ON replies.user_id = users.id 
+                 WHERE replies.feeling_id = ?";
+    $replyStmt = $conn->prepare($replySql);
+    $replyStmt->bind_param('i', $feelingId);
+    $replyStmt->execute();
+    $replyResult = $replyStmt->get_result();
+
+    while ($replyRow = $replyResult->fetch_assoc()) {
+        $row['replies'][] = $replyRow;
     }
 
-    // Fetch feelings with associated replies
-    $sql = "SELECT f.id, f.name, f.timestamp, f.content, f.image_path, f.likes, 
-                   COUNT(v.id) AS views, 
-                   r.id AS reply_id, r.name AS reply_name, r.timestamp AS reply_timestamp, r.content AS reply_content
-            FROM feelings f
-            LEFT JOIN replies r ON f.id = r.feeling_id
-            LEFT JOIN views v ON f.id = v.feeling_id
-            GROUP BY f.id, r.id
-            ORDER BY f.timestamp DESC";
-    $result = $conn->query($sql);
-
-    if ($result === false) {
-        throw new Exception('Error executing query: ' . $conn->error);
-    }
-
-    $feelings = [];
-    while ($row = $result->fetch_assoc()) {
-        $feelingId = $row['id'];
-        if (!isset($feelings[$feelingId])) {
-            $feelings[$feelingId] = [
-                'id' => $feelingId,
-                'name' => $row['name'],
-                'timestamp' => $row['timestamp'],
-                'content' => $row['content'],
-                'image_path' => $row['image_path'],
-                'likes' => $row['likes'],
-                'views' => $row['views'],
-                'replies' => []
-            ];
-        }
-
-        // Add reply to the feeling
-        if (!empty($row['reply_id'])) {
-            $feelings[$feelingId]['replies'][] = [
-                'id' => $row['reply_id'],
-                'name' => $row['reply_name'],
-                'timestamp' => $row['reply_timestamp'],
-                'content' => $row['reply_content']
-            ];
-        }
-    }
-
-    // Convert associative array to indexed array
-    $feelings = array_values($feelings);
-
-    echo json_encode($feelings);
-} catch (Exception $e) {
-    echo json_encode([]);
+    $feelings[] = $row;
 }
 
-$conn->close();
+echo json_encode($feelings);
 ?>

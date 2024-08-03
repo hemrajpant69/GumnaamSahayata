@@ -1,50 +1,52 @@
 <?php
-ini_set('display_errors', 1);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+session_start();
 
 header('Content-Type: application/json');
 
 try {
-    // Check if request method is POST
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         throw new Exception('Invalid request method');
     }
 
-    // Get the JSON input
     $input = json_decode(file_get_contents('php://input'), true);
     if (json_last_error() !== JSON_ERROR_NONE) {
         throw new Exception('Invalid JSON input');
     }
 
-    // Retrieve form data
     $feelingId = $input['feelingId'] ?? null;
+    $userId = $_SESSION['user_id'] ?? null;
 
-    if (empty($feelingId)) {
-        throw new Exception('Feeling ID is required');
+    if (empty($feelingId) || empty($userId)) {
+        throw new Exception('Feeling ID and User ID are required');
     }
 
-    // Database connection
-    $conn = new mysqli('localhost', 'root', '', 'gumnaam_sahayata');
-    if ($conn->connect_error) {
-        throw new Exception('Database connection failed: ' . $conn->connect_error);
+    require 'db.php';
+
+    // Check if the user has already viewed the post
+    $checkStmt = $conn->prepare("SELECT * FROM views WHERE feeling_id = ? AND user_id = ?");
+    $checkStmt->bind_param('ii', $feelingId, $userId);
+    $checkStmt->execute();
+    $checkResult = $checkStmt->get_result();
+
+    if ($checkResult->num_rows > 0) {
+        throw new Exception('You have already viewed this post');
     }
 
-    $stmt = $conn->prepare("INSERT INTO views (feeling_id) VALUES (?)");
-    $stmt->bind_param('i', $feelingId);
-    if (!$stmt->execute()) {
-        throw new Exception('Error executing query: ' . $stmt->error);
+    // Insert the view
+    $stmt = $conn->prepare("INSERT INTO views (feeling_id, user_id) VALUES (?, ?)");
+    $stmt->bind_param('ii', $feelingId, $userId);
+    $stmt->execute();
+
+    if ($stmt->affected_rows > 0) {
+        $views = $conn->query("SELECT COUNT(*) AS views FROM views WHERE feeling_id = $feelingId")->fetch_assoc()['views'];
+        echo json_encode(['success' => true, 'newViews' => $views]);
+    } else {
+        throw new Exception('Unable to record view');
     }
 
-    // Get the updated number of views
-    $result = $conn->query("SELECT COUNT(id) AS views FROM views WHERE feeling_id = $feelingId");
-    if (!$result) {
-        throw new Exception('Error fetching updated views: ' . $conn->error);
-    }
-    $views = $result->fetch_assoc()['views'];
-
-    echo json_encode(['success' => true, 'newViews' => $views]);
+    $stmt->close();
+    $conn->close();
 } catch (Exception $e) {
-    echo json_encode(['success' => false, 'error' => $e->getMessage()]);
+    echo json_encode(['error' => $e->getMessage()]);
 }
 ?>
